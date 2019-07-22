@@ -3073,6 +3073,148 @@ class CommandSequence(object):
         self._vehicle._wploader.set(value, index + 1)
         self._vehicle._wpts_dirty = True
 
+############# Implemented Functions to Vehicle Class ###############
+
+    def PX4setMode(self, px4mode):
+        """
+            Sets vehicle flight mode to a set of predefined modes on PX4
+            Check PX4 documentation to access all available flight modes:
+            https://dev.px4.io/v1.9.0/en/concept/flight_modes.html
+        """
+        log.warning("Setting flight mode to " + str(mavMode))
+        vehicle._master.mav.command_long_send(vehicle._master.target_system, vehicle._master.target_component,
+                                                   mavutil.mavlink.MAV_CMD_DO_SET_MODE, 0,
+                                                       mavMode,
+                                                   0, 0, 0, 0, 0, 0)
+
+    def create_takeoff_cmd(self, height):
+        """
+            Returns mavlink command to takeoff the vehicle to a given height
+            when added to the vehicle.commands sequence of commands.
+            Check MAVLink documentation to access all messages and parameters:
+            https://mavlink.io/en/messages/common.html
+        """
+        takeoff_cmd = Command(self._master.target_system,
+        self._master.target_component,
+        0, # sequence number within the mission (auto set by API)
+        dronekit.mavutil.mavlink.MAV_FRAME_LOCAL_NED, # Frame
+        dronekit.mavutil.mavlink.MAV_CMD_NAV_TAKEOFF, 0, 0,
+        0, # param 1 -
+        0, # param 2 -
+        0, # param 3 -
+        0, # param 4 -
+        0, # param 5 -
+        0, # param 6 -
+        altitude) # param 7 - Altitude
+        return takeoff_cmd
+
+    def create_waypoint_cmd(self, time, lat, long, alt):
+        """
+            Returns mavlink command to a WayPoint to be added to a trajectory,
+            given a time for the UAV to stand at the WP, coordinates and
+            altitude, to be added to the vehicle.commands sequence of commands.
+            Check MAVLink documentation to access all messages and parameters:
+            https://mavlink.io/en/messages/common.htmls
+        """
+        wp = Command(self._master.target_system,
+        self._master.target_component,
+        0, # sequence number within the mission (auto set by API)
+        dronekit.mavutil.mavlink.MAV_FRAME_GLOBAL_RELATIVE_ALT, # Frame
+        dronekit.mavutil.mavlink.MAV_CMD_NAV_WAYPOINT,0,0,
+        time, # param 1 - Hold Time (s)
+        5, # param 2 - Acceptance radius (m)
+        0, # param 3 - Pass radius
+        0, # param 4 - Yaw angle at WayPoint
+        lat, # param 5 - Latitude
+        long, # param 6 - Longitude
+        alt) # param 7 - Altitude
+        return wp
+
+    def precision_land_cmd(self):
+        precland_msg = Command(self._master.target_system,
+        self._master.target_component,
+        0, # sequence number within the mission (auto set by API)
+        dronekit.mavutil.mavlink.MAV_FRAME_LOCAL_NED, # Frame
+        dronekit.mavutil.mavlink.MAV_CMD_NAV_LAND, 0, 0,
+        0, # param 1 - minimum target altitude (0 -> default)
+        2, # param 2 - precision land mode -> 1=opportunistic, 2=required
+        0, # param 3 - Empty
+        0, # param 4 - Yaw angle
+        0, # param 5 - Latitude
+        0, # param 6 - Longitude
+        0) # param 7 - Ground level
+        return precland_msg
+
+    # def motor_test(self):
+    #     MAV_CMD_DO_MOTOR_TEST
+
+
+def get_location_offset_meters(original_location, offset_north, offset_east, offset_alt):
+    """
+        Function to calculate displacement location based on North East offset in meters
+    http://gis.stackexchange.com/questions/2951/algorithm-for-offsetting-a-latitude-longitude-by-some-amount-of-meters
+    """
+    #earth_radius=6378137.0
+    earth_radius=6367444.65     #Radius of "spherical" earth
+    #Coordinate offsets in radians
+    dLat = offset_north/earth_radius
+    dLon = offset_east/(earth_radius*math.cos(math.pi*original_location.lat/180))
+
+    newlat = original_location.lat + (dLat * 180/math.pi)
+    newlon = original_location.lon + (dLon * 180/math.pi)
+    return LocationGlobal(newlat, newlon, original_location.alt + offset_alt)
+
+class Hangar():
+    """
+
+    """
+    def __init__(self):
+        import cv2
+        from skimage import io
+        import httplib2
+
+        ## Url to access the hangar camera image ##
+        self.thumbnail_url = 'https://openapi.icloseli.com/rest/service/camera/xxxxS_000c43b93fdb/thumbnail/current?size=1920x1080&token=5001423dc99544fc839c88f7f0bd86c8'
+        # ESP32 IP adress
+        self.esp_ip = '192.168.1.21'
+        self.http = httplib2.Http()
+
+    def show_img(self):
+        while not KeyboardInterrupt:
+            # Reads image from url
+            img = io.imread(self.thumbnail_url)
+
+            # Converts color type from BGR to RGB
+            img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+
+            # The image size can be changed in the line below
+            img = cv2.resize(img, (640, 480), interpolation=cv2.INTER_CUBIC)
+            cv2.imshow("Image", img)
+            if cv2.waitKey(1) & 0xFF == ord('q'):
+                break
+            frequency = 2.0 # Hz
+            time.sleep(1/frequency)
+
+    def get_img(self):
+        return cv2.cvtColor(io.imread(self.thumbnail_url), cv2.COLOR_BGR2RGB)
+
+    def open(self):
+        PATH = 'open'
+        data = 'open'
+        url = "http://" + self.esp_ip + '/' + PATH
+        response, content = self.http.request(url, "PUT", body=data)
+        print(response)
+        logging.warning("Abrindo Hangar")
+
+    def close(self):
+        PATH = 'close'
+        data = 'close'
+        url = "http://" + self.esp_ip + '/' + PATH
+        response, content = self.http.request(url, "PUT", body=data)
+        print(response)
+        dronekit.warning("Fechando Hangar")
+        logging.warning()
+################################################################################
 
 def default_still_waiting_callback(atts):
     logging.getLogger(__name__).debug("Still waiting for data from vehicle: %s" % ','.join(atts))
